@@ -1,0 +1,82 @@
+# Definicja Funkcji
+stworz_startegie <- function(gra) {
+  liczba_graczy <- length(gra)
+  liczba_strategii <- dim(gra[[1]])
+  kombinacje <- expand.grid(rep(list(1:liczba_strategii[1]), liczba_graczy))
+  rownowaga_nasha <- list()
+  
+  for (i in 1:nrow(kombinacje)) {
+    o <- as.integer(kombinacje[i, ])
+    
+    if (sprawdz_nasha(gra, o, liczba_graczy, liczba_strategii)) {
+      klucz <- paste(o, collapse = "")
+      rownowaga_nasha[[klucz]] <- o
+    }
+  }
+  posortowane_klucze <- sort(names(rownowaga_nasha))
+  posortowany_Nash <- setNames(lapply(posortowane_klucze, function(klucz) rownowaga_nasha[[klucz]]), posortowane_klucze)
+  return(posortowany_Nash)
+}
+
+# Funkcje sprawdzajace
+sprawdz_nasha <- function(gra, o, liczba_graczy, liczba_strategii) {
+  for (gracz in 1:liczba_graczy) {
+    max_wyplata <- maxymalna_wyplata(gra[[gracz]], o)
+    
+    for (zmiana in 1:liczba_strategii[1]) {
+      p <- replaceProfile(o, gracz, zmiana)
+      wyplata <- getwyplata(gra[[gracz]], p)
+      
+      if (wyplata > max_wyplata) {
+        return(FALSE)
+      }
+    }
+  }
+  
+  return(TRUE)
+}
+maxymalna_wyplata <- function(wyplata_gracza, o) {
+  do.call(`[`, append(list(wyplata_gracza), as.list(o)))
+}
+getwyplata <- function(wyplata_gracza, p) {
+  do.call(`[`, append(list(wyplata_gracza), as.list(p)))
+}
+replaceProfile <- function(o, gracz, zmiana) {
+  p <- o
+  p[gracz] <- zmiana
+  return(p)
+}
+
+# Przyklady
+
+#Gra dla 2 graczy - dylemat wieznia
+gra1 <- list(
+  "gracz1" = array(c(3, 2, 0, 2), dim = c(2, 2)),
+  "gracz2" = array(c(3, 0, 2, 2), dim = c(2, 2))
+)
+stworz_startegie(gra1)
+
+# Gra dla 3 graczy
+gra2 <- list(
+  "gracz1" = array(c(1, 0, 0, 0, 0, 0, 0, 1), dim = c(2, 2, 2)),
+  "gracz2" = array(c(1, 0, 0, 0, 0, 0, 0, 1), dim = c(2, 2, 2)),
+  "gracz3" = array(c(1, 0, 0, 0, 0, 0, 0, 1), dim = c(2, 2, 2))
+)
+stworz_startegie(gra2)
+
+#Gra dla 3 graczy - anty-koordynacyjna
+gra3 <- list(
+  "gracz1" = array(c(0, 1, 1, 1, 1, 1, 1, 0), dim = c(2, 2, 2)),
+  "gracz2" = array(c(0, 1, 1, 1, 1, 1, 1, 0), dim = c(2, 2, 2)),
+  "gracz3" = array(c(0, 1, 1, 1, 1, 1, 1, 0), dim = c(2, 2, 2))
+)
+stworz_startegie(gra3)
+
+# Gra dla 4 graczy
+gra4 <- list(
+  "gracz1" = array(c(1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1), dim = c(2, 2, 2, 2)),
+  "gracz2" = array(c(1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1), dim = c(2, 2, 2, 2)),
+  "gracz3" = array(c(1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1), dim = c(2, 2, 2, 2)),
+  "gracz4" = array(c(1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1), dim = c(2, 2, 2, 2))
+)
+stworz_startegie(gra4)
