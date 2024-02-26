@@ -1,0 +1,155 @@
+//SERVER//
+#install.packages("shiny")
+#install.packages("data.table")
+#install.packages("ggplot2")
+#install.packages("plotly")
+#install.packages("googleVis")
+library(shiny)
+library(data.table)
+library(ggplot2)
+library(plotly)
+library(googleVis)
+
+dataDir <- getwd()
+
+z <- data.frame(
+  Kod_Kraju = c("CZ","DK","DE","EE","IE","GR","ES","FR","HR","IT","CY","LV","LT","LU","HU","MT","NL","AT","PL","PT","RO","SI","SK","FI","SE","IS","LI","NO","CH","GB","ME","AL","RS","GE","AD","AM"),
+  Nazwa_Kraju = c("Czechy","Dania","Niemcy","Estonia","Irlandia","Grecja","Hiszpania","Francja","Chorwacja","Włochy","Cypr","Łotwa","Litwa","Luksemburg","Węgry","Malta","Holandia","Austria","Polska","Portugalia","Rumunia","Słowenia","Słowacja","Finlandia","Szwecja","Islandia","Liechtenstein","Norwegia","Szwajcaria","Wielka Brytania","Czarnogóra","Albania","Serbia","Gruzja","Andora","Armenia")
+)
+
+shinyServer(function(input, output) {
+  
+  v <- reactiveValues(dataLoadDownload = FALSE, dataIn = NULL)
+  
+  observe({
+    if (v$dataLoadDownload) {
+      tryCatch({
+        download.file(
+          url = "https://ec.europa.eu/eurostat/api/dissemination/sdmx/2.1/data/demo_r_mwk_ts?format=TSV&compressed=true",
+          destfile = file.path(getwd(), "demo_r_mwk_ts.tsv.gz"),
+          method = "curl"
+        )
+        
+        d <- read.table(file = file.path(getwd(), "demo_r_mwk_ts.tsv.gz"), sep = "\t", dec = ".", header = TRUE)
+        
+        x <- as.data.frame(rbindlist(lapply(c("CZ","DK","DE","EE","IE","EL","ES","FR","HR","IT","CY","LV","LT","LU","HU","MT","NL","AT","PL","PT","RO","SI","SK","FI","SE","IS","LI","NO","CH","UK","ME","AL","RS","GE","AD","AM"), function(Kraj) {
+          
+          x <- t(d[grep(Kraj, d[, 1]), ])
+          x <- x[-1, ]
+          options(warn = -1)
+          
+          if (input$gender == "Mężczyźni") {
+            x <- data.frame(
+              Kraj = Kraj,
+              Mężczyźni = as.integer(gsub(" p", "", x[, 2])),
+              Tydzień = gsub("X", "", rownames(x)),
+              Łącznie = as.integer(gsub(" p", "", x[, 3]))
+            )
+          } else if (input$gender == "Kobiety") {
+            x <- data.frame(
+              Kraj = Kraj,
+              Kobiety = as.integer(gsub(" p", "", x[, 1])),
+              Tydzień = gsub("X", "", rownames(x)),
+              Łącznie = as.integer(gsub(" p", "", x[, 3]))
+            )
+          } else {
+            x <- data.frame(
+              Kraj = Kraj,
+              Kobiety = as.integer(gsub(" p", "", x[, 1])),
+              Mężczyźni = as.integer(gsub(" p", "", x[, 2])),
+              Tydzień = gsub("X", "", rownames(x)),
+              Łącznie = as.integer(gsub(" p", "", x[, 3]))
+            )
+          }
+          
+          options(warn = 0)
+          x <- x[order(x$Tydzień), ]
+          
+          return(x)
+        })))
+        rownames(x) <- NULL
+        
+        x <- na.omit(x)
+        
+        v$dataIn <- subset(x, substr(Tydzień, 1, 4) == as.character(input$selectStartYear))
+        
+      }, error = function(e) {
+        cat("Błąd pobierania danych:", conditionMessage(e), "\n")
+        v$dataIn <- NULL
+      })
+      
+      v$dataLoadDownload <- FALSE
+    }
+  })
+  
+  observeEvent(c(input$gender, input$selectStartYear), {
+    v$dataLoadDownload <- TRUE
+  })
+  
+  # Tabela
+  output$table <- renderTable({
+    req(v$dataIn)
+    return(v$dataIn)
+  }, include.rownames = FALSE)
+  
+  # Mapa Europy
+  output$view <- renderGvis({
+    req(v$dataIn)
+    v$dataIn$Kraj <- gsub("UK", "GB", v$dataIn$Kraj)
+    v$dataIn$Kraj <- gsub("EL", "GR", v$dataIn$Kraj)
+    col <- switch(input$gender,
+                  "Łącznie" = "Łącznie",
+                  "Kobiety" = "Kobiety",
+                  "Mężczyźni" = "Mężczyźni")
+    
+    data_sum <- aggregate(. ~ Kraj, data = v$dataIn[, c("Kraj", col)], sum)
+    print(data_sum)
+    gvisGeoChart(data_sum, "Kraj", col,
+                 options = list(region = "150", resolution = "countries", colorAxis = '{minValue: 0, colors: ["pink", "red"]}'))
+  })
+  
+  # Szereg czasowy
+  output$timeseries <- renderPlotly({
+    req(v$dataIn)
+    col <- switch(input$gender,
+                  "Łącznie" = "Łącznie",
+                  "Kobiety" = "Kobiety",
+                  "Mężczyźni" = "Mężczyźni")
+    
+    img <- ggplot(data = v$dataIn, aes(x = as.integer(factor(Tydzień)), y = get(col), group = Kraj, color = Kraj)) +
+      geom_line() +
+      geom_point() +
+      labs(title = "Ilość śmierci w ujęciu rocznym",
+           x = "Tydzień",
+           y = "Liczba śmierci") +
+      theme_minimal() +
+      theme(legend.position = "bottom") +
+      scale_color_manual(values = rainbow(length(unique(v$dataIn$Kraj))))
+    {
+      print(img)
+      }
+  })
+})
+
+//UI//
+ui <- fluidPage(
+  titlePanel("EUROSTAT - Projekt sem.23/24"),
+  
+  sidebarLayout(
+    sidebarPanel(
+      actionButton("loadDataBtn", "Pobierz dane"),
+      selectInput("selectStartYear",
+                  label = "Wybierz rok",
+                  choices = as.vector(as.character(2010:2023), mode = "list")),
+      selectInput("gender", "Wybierz płeć:", choices = c("Łącznie", "Mężczyźni", "Kobiety")),
+      actionButton("refreshBtn", "Odśwież")  
+    ),
+    mainPanel(
+      tabsetPanel(
+        tabPanel("Tabela", tableOutput("table")),
+        tabPanel("Mapa", htmlOutput("view")),
+        tabPanel("Wykres czasowy", plotlyOutput("timeseries"))
+      )
+    )
+  )
+)
