@@ -1,0 +1,141 @@
+#1
+rm(list=ls())
+
+#install.packages("ggthemes")
+#install.packages("ggstance")
+
+library(ggplot2)
+library(ggthemes)
+library(ggstance)
+
+x11()
+# Wykres z użyciem ggthemes
+wykres <- ggplot(mtcars, aes(x = hp , y = mpg, color = factor(cyl))) +
+  geom_point() +
+  theme_economist() +
+  labs(title = "Wykres spalania w zależności od koni mechanicznych",
+       x = "Konie mechaniczne",
+       y = "Mile na galon",
+       color = "Cylindry")
+print(wykres)
+
+x11()
+# Wykres z użyciem ggstance
+mtcars$car_model <- rownames(mtcars)
+wykres2 <- ggplot(mtcars, aes(x = hp, y = car_model)) +
+  geom_colh(aes(fill = factor(vs)), position = "identity") +
+  scale_fill_brewer(palette = "Set1") +
+  labs(title = "Konie mechaniczne, a układ silnika (0 = V, 1 = rzedowy)",
+       x = "Konie mechaniczne",
+       y = "Model samochodu",
+       fill = "Układ silnika") +
+  theme_minimal()
+print(wykres2)
+
+#2
+#read demand.csv
+zapotrzebowanie <- read.table(file="data/demand.csv",sep=";",dec=".",header=T)
+#tabela 1
+zapotrzebowanie <- zapotrzebowanie[,c(1,3)]
+colnames(zapotrzebowanie) <- c("Timestamp","Zapotrzebowanie")
+
+#timestampy
+zapotrzebowanie <- zapotrzebowanie[as.Date(zapotrzebowanie$Timestamp) >= as.Date("2021-01-01"),]
+zapotrzebowanie <- zapotrzebowanie[as.Date(zapotrzebowanie$Timestamp) < as.Date("2023-10-01"),]
+zapotrzebowanie$RokMiesiac <- substr(zapotrzebowanie$Timestamp,1,7)
+print(head(zapotrzebowanie))
+zapotrzebowanie <- aggregate(Zapotrzebowanie~RokMiesiac,data=zapotrzebowanie,FUN=sum,na.rm=T)
+print(head(zapotrzebowanie))
+
+#read generation.csv
+oze <- read.table(file="data/generation.csv",sep=";",dec=".",header=T)
+oze <- oze[c("Timestamp","Solar","Wind_Onshore")]
+
+#tabela 2
+colnames(oze)[2:3] <- c("PV","Wiatr")
+print(head(oze))
+
+oze <- oze[as.Date(oze$Timestamp) >= as.Date("2021-01-01"),]
+oze <- oze[as.Date(oze$Timestamp) < as.Date("2023-10-01"),]
+oze$RokMiesiac <- substr(oze$Timestamp,1,7)
+print(head(oze))
+
+oze <- aggregate(cbind(Wiatr,PV)~RokMiesiac,data=oze,FUN=sum,na.rm=T)
+oze$OZE <- oze$Wiatr + oze$PV
+print(head(oze))
+
+#merge
+d <- merge(x=zapotrzebowanie,y=oze,by="RokMiesiac")
+d$proc_oze <- 100*(d$OZE/d$Zapotrzebowanie)
+d <- d[order(d$RokMiesiac),]
+d$id <- 1:nrow(d)
+print(d)
+model <- lm(d$proc_oze~id,data=d)
+
+print(model$coefficients[2])
+print(12*model$coefficients[2])
+
+#zadanie 1_1
+pdf(file = "zadanie_1_1.pdf", width = 12.6, height = 8.4)
+
+#wykres
+plot(d$proc_oze, type = "b", pch = 19, col = "purple", lwd = 2, xaxt = "n", ylab = "[%]", xlab="[Miesi?c]",ylim=c(0,30),bty="n")
+
+#linie przerywane 
+grid(length(d$proc_oze),30,col="gray",lty="dotted")
+
+#warto?ci
+text(1:length(d$proc_oze), d$proc_oze, labels = round(d$proc_oze, 2), pos = 3, cex = 0.5)
+axis(2, at = seq(0, 30, by = 5))
+
+#daty
+text(1:length(d$proc_oze), d$proc_oze-2, labels = d$RokMiesiac, srt = 90, cex = 0.6)
+
+#tytu?
+title("Produkcja OZE do zapotrzebowania na moc w Polsce\nw miesi?cach 2021.01 - 2023.09", line = 1, cex.main = 1.5)
+abline(model, col = "red",lty=2)
+
+#wzrosty roczne i miesi?czne
+mtext(paste("Wzrost roczny:",round(12*model$coefficients[2],3)," %"),side=3,line=-3,col="red")
+mtext(paste("Wzrost miesi?czny:",round(model$coefficients[2],3)," %"),side=3,line=-5,col="red")
+
+#?r?d?o
+mtext("?r?d?o danych: ENTSOE Transparency Platform\nhttps://transparency.entsoe.eu/", side = 4, line = 0, cex = 1, adj = 0 ,col = "black",)
+
+dev.off()
+
+#zadanie 1_2
+pdf(file = "zadanie_1_2.pdf", width = 12.6, height = 8.4)
+par(mfrow=c(2,1))
+
+# wykres 1_2_1
+barplot(t(as.matrix(d[c("Wiatr", "PV")])), beside = TRUE, col = c("deepskyblue1", "darkgoldenrod1"), ylab = "MWh/miesi?c",
+        names.arg = d$RokMiesiac,las=2,yaxt="n")
+
+#legenda 1
+legend("topleft", legend = c("Wiatr", "PV"), fill = c("deepskyblue1", "darkgoldenrod1"))
+
+#tytu? 1
+title("Produkcja OZE do zapotrzebowania na moc w Polsce\nw miesi?cach 2021.01 - 2023.09", line = 1, cex.main = 1.5)
+
+#warto?ci
+axis(2, at = c(0,500000,1000000,1500000,2000000,2500000))
+
+
+# wykres 1_2_2
+bar_heights_percentage <- t(as.matrix(d[c("Wiatr", "PV")]/d[["Zapotrzebowanie"]])) * 100
+
+#wykres 2
+barplot(bar_heights_percentage, beside = FALSE, col = c("deepskyblue1", "darkgoldenrod1"), ylab = "[%]",
+        ylim = c(0, 100),names.arg = d$RokMiesiac,las=3)
+
+#legenda 2
+legend("topleft", legend = c("Wiatr", "PV"), fill = c("deepskyblue1", "darkgoldenrod1"))
+
+#linia przerywana
+abline(h = seq(20, 80, by = 20), lty = 3)
+
+#?r?d?o
+mtext("?r?d?o danych: ENTSOE Transparency Platform\nhttps://transparency.entsoe.eu/", side = 4, line = 0, cex = 1, adj=0)
+
+dev.off()
